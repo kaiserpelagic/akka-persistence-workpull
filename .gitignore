@@ -1,0 +1,34 @@
+# ignore sbt related stuff
+project/boot
+
+# actor mailbox persistence
+_mb/
+
+# java stuff
+*.class
+*.log
+*.war
+*.ear
+
+# Maven
+target/
+
+#dev props
+src/main/resources/dev/*
+
+# netbeans
+nbproject/private/
+
+# vim stuff
+*.sw?
+
+# misc
+*~
+*.bak
+.DS_Store
+.history
+nb-configuration.xml
+
+
+#akka persistence journal
+journal/
