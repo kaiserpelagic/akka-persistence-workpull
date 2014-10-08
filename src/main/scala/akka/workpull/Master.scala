@@ -2,22 +2,21 @@ package com.akka.workpull
 
 import akka.actor._
 import akka.persistence._
-import scala.collection.mutable.{ Map, Queue }
 import org.slf4j.LoggerFactory
 import PullingPattern._
+import WorkState._
 
-class Master[T] extends PersistentActor {
+class Master[T <: Queueable] extends PersistentActor {
 
   val persistenceId = "workpoolMaster"
   
-  private val workers = Map.empty[ActorRef, Option[(ActorRef, T)]]
+  private val workers = scala.collection.mutable.Map.empty[ActorRef, Option[(ActorRef, T)]]
 
-  private val queue = Queue.empty[T]
-
-  private var work: Option[T] = None
+  // event sourced
+  private var state = WorkState.empty[T]
 
   private def notifyWorkers(): Unit = {
-    if (!queue.isEmpty) {
+    if (state.hasWork) {
       workers.foreach { 
         case (worker, work) if work.isEmpty => worker ! WorkAvailable 
         case _ =>
@@ -25,40 +24,36 @@ class Master[T] extends PersistentActor {
     }
   }
   
-  def enqueue(enqueue: Enqueue[T]) = {
-    log.info(s"ENQUEUE EVT $enqueue")
-    queue += enqueue.work
-  }
-  
-  def dequeue(ignore: Dequeue) = { 
-    log.info(s"DEQUEUE EVT")
-    if (!queue.isEmpty) work = Some(queue.dequeue)
-    else work = None
-  }  
-
   val receiveRecover: Receive = {
-    case work: Enqueue[T] => enqueue(work)
-    case Dequeue => dequeue(Dequeue)
+    case event: WorkEvent => state = state.update(event) 
   } 
 
   val receiveCommand: Receive = {
 
     case work: Work[T] => {
-      persist(Enqueue(work.work))(enqueue)
-      notifyWorkers()
+      persist(WorkAddedEvt(work.work)) { event => 
+        state = state.update(event) 
+        notifyWorkers()
+      }
     }
 
     case GimmeWork => {
-      persist(Dequeue)(dequeue)
-      work foreach { w => 
-        workers += (sender -> Some(sender -> w))
-        sender ! Work(w)
+      if (state.hasWork) {
+        val work = state.pop 
+        persist(WorkStartedEvt(work)) { event =>
+          state = state.update(event) 
+          workers += (sender -> Some(sender -> work))
+          sender ! Work(work)
+        }
       }
     }
 
     case completed: WorkCompleted[T] => {
-      log.info(s"work ($completed) completed")
+      log.info(s"work completed $completed")
       workers += (sender -> None)
+      persist(WorkCompletedEvt(completed.work)) { event =>
+        state = state.update(event)
+      }
     }
 
     case failed: WorkFailed[T] => {
@@ -77,6 +72,13 @@ class Master[T] extends PersistentActor {
     case Terminated(worker) => {
       log.info(s"worker ($worker) died - removing from the set of workers")
       workers -= worker
+    }
+
+    case CancelJob(id) => {
+      persist(WorkCancelEvt(id)) { event =>
+        state = state.update(event)
+      }
+      sender ! true
     }
   }
 

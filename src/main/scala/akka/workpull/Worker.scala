@@ -10,7 +10,7 @@ import scala.reflect.ClassTag
 import scala.util.{ Failure, Success }
 import PullingPattern._
 
-abstract class Worker[T: ClassTag](val master: ActorRef)(implicit manifest: Manifest[T]) extends Actor {
+abstract class Worker[T : ClassTag](val master: ActorRef)(implicit manifest: Manifest[T]) extends Actor {
 
   implicit val ec = context.dispatcher
 

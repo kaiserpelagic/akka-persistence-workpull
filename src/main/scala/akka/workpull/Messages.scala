@@ -16,7 +16,5 @@ object PullingPattern {
   case class WorkFailed[T](work: T) extends Message
   case class WorkFinished[T](work: T) extends Message
 
-  trait Dequeue extends Message
-  case object Dequeue extends Dequeue
-  case class Enqueue[T](work: T) extends Message
+  case class CancelJob(id: java.util.UUID) extends Message 
 }
